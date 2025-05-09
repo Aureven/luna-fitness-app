@@ -22,13 +22,20 @@ def decrypt_credentials():
     return None
 
 def save_encrypted_credentials(json_text):
-    key = Fernet.generate_key()
-    with open(KEY_FILE, "wb") as kf:
-        kf.write(key)
-    fernet = Fernet(key)
-    encrypted = fernet.encrypt(json_text.encode())
-    with open(ENC_FILE, "wb") as ef:
-        ef.write(encrypted)
+    try:
+        # 정규화된 JSON 파싱 시도
+        json_text = json_text.strip()
+        creds_dict = json.loads(json_text)
+        key = Fernet.generate_key()
+        with open(KEY_FILE, "wb") as kf:
+            kf.write(key)
+        fernet = Fernet(key)
+        encrypted = fernet.encrypt(json_text.encode())
+        with open(ENC_FILE, "wb") as ef:
+            ef.write(encrypted)
+        return creds_dict
+    except json.JSONDecodeError as e:
+        raise ValueError(f"❗ JSON 형식 오류: {e}")
 
 def authorize_gspread(creds_dict):
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -42,14 +49,15 @@ st.title("🏋️ 루나 피트니스 루틴")
 # 🔐 인증 여부 확인
 creds_dict = decrypt_credentials()
 if creds_dict:
-    client = authorize_gspread(creds_dict)
-    st.success("✅ 인증 성공 – 자동 연동 중입니다.")
-
-    # 예시: 시트 열기 및 표시
     try:
+        client = authorize_gspread(creds_dict)
+        st.success("✅ 인증 성공 – 자동 연동 중입니다.")
+
+        # 예시: 시트 열기 및 표시
         sheet = client.open("운동기록_템플릿").sheet1
         st.write("### 📄 운동기록 샘플")
         st.dataframe(sheet.get_all_records())
+
     except Exception as e:
         st.error(f"시트 접근 실패: {e}")
 
@@ -58,8 +66,7 @@ else:
     json_input = st.text_area("Google 서비스 계정 JSON 전체 붙여넣기", height=300)
     if st.button("🔒 저장 및 연동"):
         try:
-            creds_dict = json.loads(json_input)
-            save_encrypted_credentials(json_input)
+            creds_dict = save_encrypted_credentials(json_input)
             st.success("🎉 키 저장 및 인증 성공! 앱을 새로고침해주세요.")
         except Exception as e:
-            st.error(f"인증 실패: {e}")
+            st.error(str(e))
